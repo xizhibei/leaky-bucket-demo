@@ -26,27 +26,33 @@ const bucketState = getBucketState(newLimiter, 'user1');
 ## API
 
 ### `createRateLimiter(capacity: number, leakRate: number): RateLimiter`
+
 Creates a new rate limiter with specified capacity and leak rate per second.
 
 ### `allowRequest(limiter: RateLimiter, userId: string, timestamp: number): [boolean, RateLimiter]`
+
 Determines if a request should be allowed and returns the new limiter state.
 
 ### `getBucketState(limiter: RateLimiter, userId: string): BucketState | null`
+
 Returns current bucket information for debugging purposes.
 
 ## Design Decisions
 
 ### Functional Approach
+
 - Immutable data structures with functional updates
 - No mutation of existing state
 - Pure functions with predictable behavior
 
 ### Time-based Leaking
+
 - Buckets leak based on elapsed time since last update
 - Supports fractional timestamps and leak rates
 - Handles edge cases like backwards timestamps
 
 ### Per-user Buckets
+
 - Each user ID gets independent bucket tracking
 - Efficient Map-based storage
 - Automatic bucket creation on first request

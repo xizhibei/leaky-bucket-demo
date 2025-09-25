@@ -1,0 +1,5 @@
+{
+  "src/**/*.{ts,js,json}": ["prettier --write", "eslint --fix"],
+  "src/**/*.ts": ["pnpm typecheck"],
+  "*.{md,yml,yaml}": ["prettier --write"]
+}

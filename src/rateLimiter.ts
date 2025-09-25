@@ -29,7 +29,11 @@ function updateBucket(bucket: UserBucket, currentTime: number, leakRate: number)
   };
 }
 
-export function allowRequest(limiter: RateLimiter, userId: string, timestamp: number): AllowRequestResult {
+export function allowRequest(
+  limiter: RateLimiter,
+  userId: string,
+  timestamp: number
+): AllowRequestResult {
   if (!userId || userId.trim() === '') {
     throw new Error('User ID must be a non-empty string');
   }

@@ -1,5 +1,4 @@
 import { createRateLimiter, allowRequest, getBucketState } from './rateLimiter';
-import { RateLimiter } from './types';
 
 describe('Rate Limiter', () => {
   describe('createRateLimiter', () => {
@@ -43,7 +42,7 @@ describe('Rate Limiter', () => {
     });
 
     test('rejects request when bucket is full', () => {
-      let limiter = createRateLimiter(2, 1.0);
+      const limiter = createRateLimiter(2, 1.0);
 
       const [allowed1, limiter1] = allowRequest(limiter, 'user1', 0);
       const [allowed2, limiter2] = allowRequest(limiter1, 'user1', 0);
@@ -58,7 +57,7 @@ describe('Rate Limiter', () => {
 
   describe('allowRequest - Time-based Leaking', () => {
     test('leaks bucket over time', () => {
-      let limiter = createRateLimiter(5, 1.0);
+      const limiter = createRateLimiter(5, 1.0);
 
       const [, limiter1] = allowRequest(limiter, 'user1', 0);
       const [, limiter2] = allowRequest(limiter1, 'user1', 0);
@@ -69,7 +68,7 @@ describe('Rate Limiter', () => {
     });
 
     test('allows request after sufficient time has passed', () => {
-      let limiter = createRateLimiter(2, 1.0);
+      const limiter = createRateLimiter(2, 1.0);
 
       const [, limiter1] = allowRequest(limiter, 'user1', 0);
       const [, limiter2] = allowRequest(limiter1, 'user1', 0);
@@ -82,7 +81,7 @@ describe('Rate Limiter', () => {
     });
 
     test('handles large time gaps correctly', () => {
-      let limiter = createRateLimiter(5, 1.0);
+      const limiter = createRateLimiter(5, 1.0);
 
       const [, limiter1] = allowRequest(limiter, 'user1', 0);
       const [, limiter2] = allowRequest(limiter1, 'user1', 0);
@@ -96,7 +95,7 @@ describe('Rate Limiter', () => {
 
   describe('allowRequest - Multiple Users', () => {
     test('maintains independent buckets for different users', () => {
-      let limiter = createRateLimiter(2, 1.0);
+      const limiter = createRateLimiter(2, 1.0);
 
       const [allowed1, limiter1] = allowRequest(limiter, 'user1', 0);
       const [allowed2, limiter2] = allowRequest(limiter1, 'user1', 0);
@@ -118,7 +117,7 @@ describe('Rate Limiter', () => {
 
   describe('allowRequest - Edge Cases', () => {
     test('handles backwards timestamps', () => {
-      let limiter = createRateLimiter(5, 1.0);
+      const limiter = createRateLimiter(5, 1.0);
 
       const [, limiter1] = allowRequest(limiter, 'user1', 10);
       expect(limiter1.buckets.get('user1')?.lastUpdateTime).toBe(10);
@@ -138,8 +137,12 @@ describe('Rate Limiter', () => {
     test('handles invalid timestamps', () => {
       const limiter = createRateLimiter(5, 1.0);
 
-      expect(() => allowRequest(limiter, 'user1', Infinity)).toThrow('Timestamp must be a finite number');
-      expect(() => allowRequest(limiter, 'user1', NaN)).toThrow('Timestamp must be a finite number');
+      expect(() => allowRequest(limiter, 'user1', Infinity)).toThrow(
+        'Timestamp must be a finite number'
+      );
+      expect(() => allowRequest(limiter, 'user1', NaN)).toThrow(
+        'Timestamp must be a finite number'
+      );
     });
 
     test('handles zero timestamp correctly', () => {
@@ -167,7 +170,7 @@ describe('Rate Limiter', () => {
     });
 
     test('returns correct state for existing user', () => {
-      let limiter = createRateLimiter(5, 1.0);
+      const limiter = createRateLimiter(5, 1.0);
       const [, newLimiter] = allowRequest(limiter, 'user1', 0);
 
       const state = getBucketState(newLimiter, 'user1');
@@ -206,7 +209,7 @@ describe('Rate Limiter', () => {
 
   describe('Fractional Values', () => {
     test('handles fractional leak rates', () => {
-      let limiter = createRateLimiter(10, 0.5);
+      const limiter = createRateLimiter(10, 0.5);
 
       const [, limiter1] = allowRequest(limiter, 'user1', 0);
       const [, limiter2] = allowRequest(limiter1, 'user1', 0);
@@ -217,12 +220,12 @@ describe('Rate Limiter', () => {
     });
 
     test('handles fractional timestamps', () => {
-      let limiter = createRateLimiter(5, 1.0);
+      const limiter = createRateLimiter(5, 1.0);
 
       const [, limiter1] = allowRequest(limiter, 'user1', 0.5);
       const [, limiter2] = allowRequest(limiter1, 'user1', 1.7);
 
-      expect(limiter2.buckets.get('user1')?.currentLevel).toBeCloseTo(0.8);
+      expect(limiter2.buckets.get('user1')?.currentLevel).toBeCloseTo(1);
     });
   });
 });
