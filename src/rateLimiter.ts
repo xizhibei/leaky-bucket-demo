@@ -74,7 +74,36 @@ export function allowRequest(
   return [true, { ...limiter, buckets: newBuckets }];
 }
 
-export function getBucketState(limiter: RateLimiter, userId: string): BucketState | null {
+export function cleanupInactiveBuckets(
+  limiter: RateLimiter,
+  currentTime: number,
+  maxIdleTime = 3600
+): RateLimiter {
+  const newBuckets = new Map<string, UserBucket>();
+  const cutoffTime = currentTime - maxIdleTime;
+
+  limiter.buckets.forEach((bucket, userId) => {
+    const currentLevel = calculateLeakedLevel(bucket, currentTime, limiter.leakRate);
+
+    if (bucket.lastUpdateTime >= cutoffTime || currentLevel > 0) {
+      newBuckets.set(userId, {
+        currentLevel,
+        lastUpdateTime: Math.max(bucket.lastUpdateTime, currentTime),
+      });
+    }
+  });
+
+  return {
+    ...limiter,
+    buckets: newBuckets,
+  };
+}
+
+export function getBucketState(
+  limiter: RateLimiter,
+  userId: string,
+  currentTime?: number
+): BucketState | null {
   if (!userId || userId.trim() === '') {
     return null;
   }
@@ -84,9 +113,14 @@ export function getBucketState(limiter: RateLimiter, userId: string): BucketStat
     return null;
   }
 
+  const actualCurrentLevel =
+    currentTime !== undefined
+      ? calculateLeakedLevel(bucket, currentTime, limiter.leakRate)
+      : bucket.currentLevel;
+
   return {
     userId,
-    currentLevel: bucket.currentLevel,
+    currentLevel: actualCurrentLevel,
     capacity: limiter.capacity,
     lastUpdateTime: bucket.lastUpdateTime,
     leakRate: limiter.leakRate,

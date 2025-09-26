@@ -104,25 +104,51 @@ Determines if a request should be allowed and returns the new limiter state.
 
 Returns current bucket information for debugging purposes.
 
-## Design Decisions
+## Design Decisions & Trade-offs
 
-### Functional Approach
+### Immutable State Pattern
 
-- Immutable data structures with functional updates
-- No mutation of existing state
-- Pure functions with predictable behavior
+**Decision**: Functions return new `RateLimiter` instances rather than mutating existing ones.
 
-### Time-based Leaking
+**Benefits**: Thread safety, easy rollback/undo operations, predictable state management
+**Trade-offs**: Higher memory allocation and GC pressure vs in-place mutations
 
-- Buckets leak based on elapsed time since last update
-- Supports fractional timestamps and leak rates
-- Handles edge cases like backwards timestamps
+### Lazy Bucket Creation
 
-### Per-user Buckets
+**Decision**: User buckets are only created when first accessed during `allowRequest`.
 
-- Each user ID gets independent bucket tracking
-- Efficient Map-based storage
-- Automatic bucket creation on first request
+**Benefits**: Minimal memory usage for systems with many potential users
+**Trade-offs**: Slight computational overhead on first request per user
+
+### Time-Based Continuous Leaking
+
+**Decision**: Uses continuous time calculation rather than discrete intervals or background timers.
+
+**Benefits**: Smooth rate limiting, no background processes, mathematically precise
+**Trade-offs**: Recalculates leak on every request (CPU) vs maintaining timers (complexity)
+
+### Map-Based User Storage
+
+**Decision**: Uses `Map<string, UserBucket>` for O(1) user lookup performance.
+
+**Benefits**: Efficient user lookup, essential for high-throughput scenarios
+**Trade-offs**: Memory scales with active user count vs global rate limiting
+
+### Functional API Design
+
+**Decision**: Pure functions with no side effects, immutable data structures.
+
+**Benefits**: Predictable behavior, easy testing, no hidden state mutations
+**Trade-offs**: Object creation overhead vs mutable state performance
+
+### Floating-Point Time Precision
+
+**Decision**: Supports fractional timestamps and leak rates for smooth operation.
+
+**Benefits**: Handles sub-second precision, smooth traffic flow
+**Trade-offs**: Potential precision issues with very long periods vs integer-only math
+
+The design prioritizes **correctness**, **simplicity**, and **thread safety** over raw performance, making it suitable for most application-level rate limiting needs where predictable behavior is more important than maximum throughput.
 
 ## Edge Cases Handled
 

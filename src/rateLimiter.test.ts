@@ -1,4 +1,9 @@
-import { createRateLimiter, allowRequest, getBucketState } from './rateLimiter';
+import {
+  createRateLimiter,
+  allowRequest,
+  getBucketState,
+  cleanupInactiveBuckets,
+} from './rateLimiter';
 
 describe('Rate Limiter', () => {
   describe('createRateLimiter', () => {
@@ -226,6 +231,177 @@ describe('Rate Limiter', () => {
       const [, limiter2] = allowRequest(limiter1, 'user1', 1.7);
 
       expect(limiter2.buckets.get('user1')?.currentLevel).toBeCloseTo(1);
+    });
+  });
+
+  describe('Memory Management', () => {
+    test('cleanupInactiveBuckets removes old inactive buckets', () => {
+      const limiter = createRateLimiter(5, 1.0);
+
+      const [, limiter1] = allowRequest(limiter, 'user1', 0);
+      const [, limiter2] = allowRequest(limiter1, 'user2', 0);
+      expect(limiter2.buckets.size).toBe(2);
+
+      const cleanedLimiter = cleanupInactiveBuckets(limiter2, 3601, 3600);
+      expect(cleanedLimiter.buckets.size).toBe(0);
+    });
+
+    test('cleanupInactiveBuckets preserves active buckets', () => {
+      const limiter = createRateLimiter(5, 1.0);
+
+      const [, limiter1] = allowRequest(limiter, 'user1', 1000);
+      const [, limiter2] = allowRequest(limiter1, 'user2', 0);
+      expect(limiter2.buckets.size).toBe(2);
+
+      const cleanedLimiter = cleanupInactiveBuckets(limiter2, 1000, 900);
+      expect(cleanedLimiter.buckets.size).toBe(1);
+      expect(cleanedLimiter.buckets.has('user1')).toBe(true);
+      expect(cleanedLimiter.buckets.has('user2')).toBe(false);
+    });
+
+    test('cleanupInactiveBuckets updates bucket levels based on current time', () => {
+      const limiter = createRateLimiter(5, 1.0);
+
+      const [, limiter1] = allowRequest(limiter, 'user1', 0);
+      const [, limiter2] = allowRequest(limiter1, 'user1', 0);
+      expect(limiter2.buckets.size).toBe(1);
+      expect(limiter2.buckets.get('user1')?.currentLevel).toBe(2);
+
+      const cleanedLimiter = cleanupInactiveBuckets(limiter2, 1.5, 3600);
+      expect(cleanedLimiter.buckets.size).toBe(1);
+      expect(cleanedLimiter.buckets.get('user1')?.currentLevel).toBeCloseTo(0.5);
+    });
+
+    test('should handle many users without excessive memory allocation', () => {
+      let limiter = createRateLimiter(5, 1.0);
+      const userCount = 1000;
+
+      const start = performance.now();
+      for (let i = 0; i < userCount; i++) {
+        const [, newLimiter] = allowRequest(limiter, `user${i}`, 0);
+        limiter = newLimiter;
+      }
+      const end = performance.now();
+
+      expect(limiter.buckets.size).toBe(userCount);
+      expect(end - start).toBeLessThan(5000);
+    });
+  });
+
+  describe('getBucketState - Enhanced', () => {
+    test('returns accurate current level with timestamp', () => {
+      const limiter = createRateLimiter(5, 1.0);
+      const [, newLimiter] = allowRequest(limiter, 'user1', 0);
+
+      const stateAtTime0 = getBucketState(newLimiter, 'user1', 0);
+      const stateAtTime2 = getBucketState(newLimiter, 'user1', 2);
+
+      expect(stateAtTime0?.currentLevel).toBe(1);
+      expect(stateAtTime2?.currentLevel).toBe(0);
+    });
+
+    test('returns stale level without timestamp parameter', () => {
+      const limiter = createRateLimiter(5, 1.0);
+      const [, newLimiter] = allowRequest(limiter, 'user1', 0);
+
+      const staleState = getBucketState(newLimiter, 'user1');
+      expect(staleState?.currentLevel).toBe(1);
+    });
+  });
+
+  describe('Edge Cases and Precision', () => {
+    test('handles very small leak rates without precision loss', () => {
+      const limiter = createRateLimiter(1000, 0.000001);
+
+      const [, limiter1] = allowRequest(limiter, 'user1', 0);
+      const [, limiter2] = allowRequest(limiter1, 'user1', 1000000);
+
+      expect(limiter2.buckets.get('user1')?.currentLevel).toBeCloseTo(1);
+    });
+
+    test('handles very large timestamps safely', () => {
+      const limiter = createRateLimiter(5, 1.0);
+      const largeTimestamp = Number.MAX_SAFE_INTEGER / 2;
+
+      const [allowed, newLimiter] = allowRequest(limiter, 'user1', largeTimestamp);
+      expect(allowed).toBe(true);
+      expect(newLimiter.buckets.get('user1')?.lastUpdateTime).toBe(largeTimestamp);
+    });
+
+    test('handles concurrent requests at same timestamp', () => {
+      let limiter = createRateLimiter(3, 1.0);
+      const results = [];
+
+      for (let i = 0; i < 5; i++) {
+        const [allowed, newLimiter] = allowRequest(limiter, 'user1', 0);
+        results.push(allowed);
+        limiter = newLimiter;
+      }
+
+      expect(results).toEqual([true, true, true, false, false]);
+    });
+
+    test('handles malformed user IDs gracefully', () => {
+      const limiter = createRateLimiter(5, 1.0);
+
+      expect(() => allowRequest(limiter, '\0\x01\xFF', 0)).not.toThrow();
+      expect(() => allowRequest(limiter, 'a'.repeat(1000), 0)).not.toThrow();
+      expect(() => allowRequest(limiter, '你好世界🌍', 0)).not.toThrow();
+    });
+
+    test('maintains precision over extended time periods', () => {
+      const limiter = createRateLimiter(100, 0.1);
+
+      const [, limiter1] = allowRequest(limiter, 'user1', 0);
+      const [, limiter2] = allowRequest(limiter1, 'user1', 0);
+      expect(limiter2.buckets.get('user1')?.currentLevel).toBe(2);
+
+      const [, limiter3] = allowRequest(limiter2, 'user1', 86400);
+      const finalLevel = limiter3.buckets.get('user1')?.currentLevel;
+      expect(finalLevel).toBeCloseTo(1, 5);
+    });
+  });
+
+  describe('Real-world Scenarios', () => {
+    test('handles realistic web traffic burst patterns', () => {
+      let limiter = createRateLimiter(10, 2.0);
+      let time = 0;
+
+      for (let burst = 0; burst < 3; burst++) {
+        for (let req = 0; req < 8; req++) {
+          const [allowed, newLimiter] = allowRequest(limiter, 'user1', time);
+          expect(allowed).toBe(true);
+          limiter = newLimiter;
+          time += 0.1;
+        }
+
+        time += 3;
+        const [allowed, newLimiter] = allowRequest(limiter, 'user1', time);
+        expect(allowed).toBe(true);
+        limiter = newLimiter;
+      }
+    });
+
+    test('handles long-running stability over simulated days', () => {
+      let limiter = createRateLimiter(100, 1.0);
+      let time = 0;
+      const oneDay = 86400;
+
+      for (let day = 0; day < 7; day++) {
+        for (let hour = 0; hour < 24; hour++) {
+          const requestsThisHour = Math.floor(Math.random() * 50) + 10;
+          for (let req = 0; req < requestsThisHour; req++) {
+            const [, newLimiter] = allowRequest(limiter, 'user1', time);
+            limiter = newLimiter;
+            time += (Math.random() * 3600) / requestsThisHour;
+          }
+        }
+        time = (day + 1) * oneDay;
+      }
+
+      const finalState = getBucketState(limiter, 'user1', time);
+      expect(finalState?.currentLevel).toBeGreaterThanOrEqual(0);
+      expect(finalState?.lastUpdateTime).toBeGreaterThan(0);
     });
   });
 });

@@ -18,3 +18,5 @@ export interface BucketState {
 }
 
 export type AllowRequestResult = [boolean, RateLimiter];
+
+export type CleanupResult = RateLimiter;
